@@ -1,0 +1,9 @@
+
+# Terraform generated files
+.terraform/
+*.tfstate
+*.tfstate.*
+terraform_*.zip
+setup/aws-iam-authenticator
+setup/terraform/terraform
+/terraform
