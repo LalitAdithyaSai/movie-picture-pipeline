@@ -1,72 +1,71 @@
-name: Backend Continuous Deployment
+name: Frontend Continuous Deployment
 
 on:
   push:
     branches:
       - main
     paths:
-      - 'starter/backend/**'
-      - '.github/workflows/backend-cd.yaml'
+      - 'starter/frontend/**'
+      - '.github/workflows/frontend-cd.yaml'
   workflow_dispatch:
 
 env:
   AWS_REGION: us-east-1
-  ECR_REPOSITORY: backend
+  ECR_REPOSITORY: frontend
   EKS_CLUSTER_NAME: cluster
+  REACT_APP_MOVIE_API_URL: http://localhost:5000
 
 jobs:
   lint:
-    name: Lint Backend
+    name: Lint Frontend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: starter/backend
+        working-directory: starter/frontend
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.10'
-
-      - name: Install Pipenv
-        run: pip install pipenv
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
       - name: Install dependencies
-        run: pipenv install --dev
+        run: npm ci
 
       - name: Run lint
-        run: pipenv run lint
+        run: npm run lint
 
   test:
-    name: Test Backend
+    name: Test Frontend
     runs-on: ubuntu-latest
     defaults:
       run:
-        working-directory: starter/backend
+        working-directory: starter/frontend
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
         with:
-          python-version: '3.10'
-
-      - name: Install Pipenv
-        run: pip install pipenv
+          node-version: '18'
+          cache: npm
+          cache-dependency-path: starter/frontend/package-lock.json
 
       - name: Install dependencies
-        run: pipenv install
+        run: npm ci
 
       - name: Run tests
-        run: pipenv run test
+        run: CI=true npm test -- --watchAll=false
 
   build:
-    name: Build and Push Backend
+    name: Build and Push Frontend
     runs-on: ubuntu-latest
     needs:
       - lint
@@ -93,14 +92,15 @@ jobs:
         env:
           ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           IMAGE_TAG: ${{ github.sha }}
-        working-directory: starter/backend
+        working-directory: starter/frontend
         run: |
           docker build \
+            --build-arg REACT_APP_MOVIE_API_URL=${{ env.REACT_APP_MOVIE_API_URL }} \
             -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
           docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
 
   deploy:
-    name: Deploy Backend to EKS
+    name: Deploy Frontend to EKS
     runs-on: ubuntu-latest
     needs:
       - build
@@ -124,18 +124,18 @@ jobs:
             --name $EKS_CLUSTER_NAME \
             --region $AWS_REGION
 
-      - name: Deploy backend to EKS
+      - name: Deploy frontend to EKS
         run: |
-          cd starter/backend/k8s
-          kustomize edit set image backend=286160984719.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.sha }}
+          cd starter/frontend/k8s
+          kustomize edit set image frontend=286160984719.dkr.ecr.$AWS_REGION.amazonaws.com/$ECR_REPOSITORY:${{ github.sha }}
           kustomize build | kubectl apply -f -
 
-      - name: Wait for backend rollout
+      - name: Wait for frontend rollout
         run: |
-          kubectl rollout status deployment/backend --timeout=180s
+          kubectl rollout status deployment/frontend --timeout=180s
 
-      - name: Verify backend deployment
+      - name: Verify frontend deployment
         run: |
-          kubectl get deployment backend
-          kubectl get pods -l app=backend
-          kubectl get service backend
+          kubectl get deployment frontend
+          kubectl get pods -l app=frontend
+          kubectl get service frontend
